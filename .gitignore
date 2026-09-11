@@ -1,0 +1,44 @@
+# Unity
+meng/[Ll]ibrary/
+meng/[Tt]emp/
+meng/[Oo]bj/
+meng/[Bb]uild/
+meng/[Bb]uilds/
+meng/[Ll]ogs/
+meng/[Uu]serSettings/
+meng/[Mm]emoryCaptures/
+meng/[Rr]ecordings/
+
+# Unity 自动生成的工程文件
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# 构建产物
+*.apk
+*.aab
+*.unitypackage
+*.app
+crashlytics-build.properties
+
+# OS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
