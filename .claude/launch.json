@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pata",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/wangtao/.pata-preview/serve.cjs"],
+      "port": 5180,
+      "autoPort": true
+    }
+  ]
+}

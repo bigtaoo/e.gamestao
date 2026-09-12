@@ -1,0 +1,20 @@
+{
+    "name": "Game.Editor",
+    "rootNamespace": "Game.Editor",
+    "references": [
+        "Game.Core",
+        "Game.Config",
+        "Game.Runtime"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

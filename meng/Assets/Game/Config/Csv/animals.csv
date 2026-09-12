@@ -1,0 +1,4 @@
+id,name,unlockLevel,feedItemId,feedCount,produceSeconds,produceItemId,produceCount,exp
+chicken,鸡,3,corn,1,1800,egg,1,5
+cow,奶牛,8,corn,3,7200,milk,1,20
+sheep,绵羊,12,cabbage,3,14400,wool,1,35

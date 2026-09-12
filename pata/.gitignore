@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+
+# 占位素材不是原创资源，不要进版本库（说明文件除外）
+src/assets/placeholder/*
+!src/assets/placeholder/README.md
+
+# 好友服务的本地库：里面是明文 bearer token，别提交
+server/data.json
+server/data.json.tmp
+server/data.json.lock

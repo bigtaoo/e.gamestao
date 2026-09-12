@@ -1,0 +1,6 @@
+id,name,unlockLevel,seedPrice,growSeconds,sellPrice,exp,yield,stages
+radish,萝卜,1,10,300,25,3,1,3
+cabbage,白菜,2,20,900,55,6,1,3
+corn,玉米,4,45,3600,130,15,1,4
+strawberry,草莓,7,120,14400,380,40,2,4
+pumpkin,南瓜,11,300,28800,900,90,1,4

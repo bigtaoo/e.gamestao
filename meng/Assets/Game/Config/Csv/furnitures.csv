@@ -1,0 +1,11 @@
+id,name,unlockLevel,price,comfort,width,height,layer,setId
+rug_country,田园地毯,1,120,8,3,2,0,country
+sofa_country,田园沙发,1,260,18,2,1,1,country
+table_country,田园茶几,2,180,12,1,1,1,country
+lamp_country,田园台灯,3,140,10,1,1,2,country
+picture_country,田园挂画,4,160,12,1,1,3,country
+rug_nordic,北欧地毯,5,200,14,3,2,0,nordic
+sofa_nordic,北欧沙发,5,480,30,3,1,1,nordic
+shelf_nordic,北欧书架,6,360,24,2,1,1,nordic
+vase_nordic,北欧花瓶,7,220,16,1,1,2,nordic
+stool_plain,小板凳,1,60,4,1,1,1,
