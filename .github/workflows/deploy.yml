@@ -2,7 +2,7 @@ name: deploy
 
 # pata（云养宠）上线流水线。两条腿分开走：
 #   web —— 构建 pata/dist，用 Cloudflare Workers static assets 发到 e.gamestao.com
-#   api —— 把 pata/server/index.mjs 推到 Hetzner VPS，容器 pata-api 重启生效
+#   api —— 把 pata/server/index.mjs 推到共享 VPS（92.205.18.79），容器 pata-api 重启生效
 #
 # 每条腿各有一个开关变量（WEB_DEPLOY_ENABLED / API_DEPLOY_ENABLED），没打开就整个 job 跳过。
 # 这样先合流水线、后配密钥不会留一串红叉。首次配置（密钥、变量、DNS、Caddy）见 deploy/README.md。
@@ -82,10 +82,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # 服务端就一个零依赖单文件，所以"部署"= 把它喂给 VPS 上的 deploy-hook.sh。
-      # 那把 key 在 authorized_keys 里被 command= 钉死在这个脚本上，拿不到 root shell，
-      # 也就不能顺着这个仓库的 CI 去碰同一台机器上的游戏后端。脚本自己会做 node --check、
-      # 原子替换、重启容器；data.json 在宿主机目录里，不随部署走。
+      # 服务端就一个零依赖单文件，所以"部署"= 把它喂给 VPS 上的 ~/pata-ci-deploy.sh。
+      # 那把 key 在 authorized_keys 里被 command= 钉死在这个脚本上，拿不到 shell ——
+      # 那台机器上还跑着公司的 wnet 栈、mssql 和德语 App 的同步后端，这个仓库的 CI
+      # 不该有能力碰它们。脚本自己会做 node --check、原子替换、重启，最后**等服务真的
+      # 答话**（401）才算成功；data.json 在宿主机目录里，不随部署走。
       - name: ship server/index.mjs
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}

@@ -1,9 +1,14 @@
-# pata 好友服务在 VPS 上的运行方式。这份文件放在 VPS 的 /root/pata/ 下，不由 CI 覆盖
-# （CI 只送 index.mjs）。改了这里要手工同步过去。
+# pata 好友服务在 VPS（92.205.18.79 / wnet-mock.elk.de）上的运行方式。
 #
-#   cd /root/pata && docker compose -f pata-api.compose.yml up -d
+# 独立的 compose 项目，**不改这台机器上别人那些栈的任何文件**（唯一的例外是
+# ~/wnet/docker/Caddyfile 里加的那个 site block，见 deploy/README.md）。
+# 和 ~/deutsch-sync 是同一套住法。
 #
-# 为什么不装 node 到宿主机：这台机器上的东西全在 docker 里，宿主机干净的状态值得保持。
+# 这份文件放在 VPS 的 ~/pata/ 下，**不由 CI 覆盖**：CI 那把密钥只能换 server/index.mjs。
+# 让它改不了 compose，它就写不出一个「把宿主 / 挂进容器」的文件去拿宿主权限 ——
+# 代价是改了这里要手工上服务器同步一次。
+#
+#   cd ~/pata && docker compose -f pata-api.compose.yml up -d
 name: pata
 
 services:
@@ -11,26 +16,51 @@ services:
     image: node:22-alpine
     container_name: pata-api
     restart: unless-stopped
-    init: true
     working_dir: /app
     # 启动前先清掉残留的单实例锁。index.mjs 的锁文件记的是 pid，容器里 node 永远是 pid 1，
-    # 上一次被 SIGKILL（OOM、docker kill）留下的锁写着 1，新进程探测 process.kill(1, 0)
-    # 会认为"持锁进程还活着"而拒绝启动 —— 服务从此起不来，直到有人手工删文件。
-    # container_name 保证这台机器上只会有一个实例，所以这里删锁是安全的。
+    # 上一次被 SIGKILL（OOM、docker kill）留下的锁写着 1，新进程 process.kill(1, 0)
+    # 探测到「持锁进程还活着」就拒绝启动 —— 服务从此起不来，直到有人手工删文件。
+    # container_name 保证这台机器上只有一个实例，所以这里删锁是安全的。
     command: sh -c "rm -f /app/data.json.lock && exec node index.mjs"
     environment:
       PORT: "5183"
-    # 代码和数据都在宿主机目录里：data.json 不随容器重建走，CI 换 index.mjs 也不用重建镜像。
+    # 以宿主机上拥有 ./server 的用户跑（tao = 1001:27）。用镜像默认的 root 的话，
+    # data.json 会变成 root 所有，而部署脚本是以 tao 的身份换同目录里的 index.mjs——
+    # 迟早撞上一个「谁也删不掉的文件」。
+    user: "${PATA_UID:-1001}:${PATA_GID:-27}"
+    # 代码和存档都在宿主机目录里：data.json 不随容器重建走，换 index.mjs 也不用重建镜像。
     volumes:
-      - /root/pata/server:/app
-    # 端口不往宿主机发布：只有同一网络里的 nw-caddy 需要它，公网入口走
-    # https://pata-api.gamestao.com（Caddy 反代 + Let's Encrypt 证书）。
+      - ./server:/app
+    # 只 expose 不 publish：这条服务不该在 :5183 上裸奔，一切从 Caddy 的 443 进来。
+    expose:
+      - "5183"
     networks:
-      - funny
+      - wnet
+    # 这台机器上跑着别人的东西（wnet 栈 + mssql + deutsch-sync），给个上限。
+    # 这个服务是单进程 node + 一份内存里的 JSON，256m 绰绰有余。
+    mem_limit: 256m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      # 镜像里没有 curl/wget，用 node 自己发。没有 /health 路由，所以打一个需要鉴权的
+      # 路由看它是不是**正确地拒绝**：401 同时证明了进程活着、路由表在、鉴权没被绕过。
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:5183/api/save').then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 networks:
-  funny:
+  wnet:
     external: true
-    # 游戏后端那套 compose 建的网络（/root/funny/server/docker-compose.cloud.yml）。
-    # 加进来只是为了让 nw-caddy 能按名字解析到 pata-api，不共享任何别的东西。
-    name: server_default
+    # wnet 那套栈建的网络。接进来只是为了让 docker-caddy-1 能按容器名解析到 pata-api，
+    # 不共享任何别的东西。
+    name: docker_default
