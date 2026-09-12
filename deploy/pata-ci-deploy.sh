@@ -26,7 +26,9 @@
 set -eu
 
 TARGET="$HOME/pata"
-IN="$TARGET/server/index.mjs.incoming"
+# 暂存文件必须也叫 *.mjs：node --check 靠扩展名判 ESM，`.incoming` 会直接
+# ERR_UNKNOWN_FILE_EXTENSION（2026-09-12 第一次真部署就栽在这里）。
+IN="$TARGET/server/incoming.mjs"
 
 cat > "$IN"
 
@@ -35,7 +37,7 @@ cat > "$IN"
 
 # 语法先过一遍再换。语法错的文件换上去，容器会进入起不来—重启—再起不来的循环，
 # 而旧文件那时已经没了。用跑服务的同一个镜像检查，免得在宿主机上装 node。
-docker run --rm -v "$TARGET/server:/w:ro" node:22-alpine node --check /w/index.mjs.incoming
+docker run --rm -v "$TARGET/server:/w:ro" node:22-alpine node --check /w/incoming.mjs
 
 mv "$IN" "$TARGET/server/index.mjs"
 
