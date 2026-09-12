@@ -1,0 +1,19 @@
+{
+  // pata 的静态托管：Cloudflare Workers static assets（没有 Worker 脚本，纯发 dist），对外 e.gamestao.com。
+  //
+  // 手工部署（在 pata/ 目录下）：
+  //   VITE_API_BASE=https://pata-api.gamestao.com npm ci && npm run build
+  //   npx wrangler deploy -c wrangler.jsonc
+  //
+  // assets.directory 相对本文件解析，不是相对 cwd。
+  // routes.custom_domain=true 会自动建 e.gamestao.com 的 DNS 记录和边缘证书，这条记录不用手工加；
+  // 好友服务那个子域（pata-api）不走这里，得在 Cloudflare 面板手工加一条 A 记录，见 deploy/README.md。
+  "name": "pata-web",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    // 游戏是单页的，路由全在前端；未知路径回落到 index.html 而不是 404。
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [{ "pattern": "e.gamestao.com", "custom_domain": true }]
+}

@@ -1,0 +1,113 @@
+name: deploy
+
+# pata（云养宠）上线流水线。两条腿分开走：
+#   web —— 构建 pata/dist，用 Cloudflare Workers static assets 发到 e.gamestao.com
+#   api —— 把 pata/server/index.mjs 推到 Hetzner VPS，容器 pata-api 重启生效
+#
+# 每条腿各有一个开关变量（WEB_DEPLOY_ENABLED / API_DEPLOY_ENABLED），没打开就整个 job 跳过。
+# 这样先合流水线、后配密钥不会留一串红叉。首次配置（密钥、变量、DNS、Caddy）见 deploy/README.md。
+#
+# meng/（Unity）不在这条流水线里：那个工程目前一个场景都没有，构建出来是空的。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pata/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}
+
+# 两个 job 都只读仓库内容，凭据各自走自己的 secret。
+permissions:
+  contents: read
+
+concurrency:
+  group: pata-deploy
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    if: ${{ vars.WEB_DEPLOY_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: pata/package-lock.json
+
+      - name: install
+        working-directory: pata
+        run: npm ci
+
+      # npm run build 就是 `tsc --noEmit && vite build`，类型错在这里红，不会发出去。
+      #
+      # VITE_API_BASE 必须在构建时给：net/api.ts 里它是 import.meta.env，值被烘成包里的常量，
+      # 部署完再改环境变量没有任何作用。不给就回落到 http://localhost:5183 —— HTTPS 页面
+      # 打明文 localhost 会被浏览器当混合内容拦掉，表现是登录闸门永远"连接中…"。
+      # 所以这里宁可缺变量就红，也不要发一个进不去的站。
+      - name: build
+        working-directory: pata
+        env:
+          VITE_API_BASE: ${{ vars.PATA_API_BASE }}
+        run: |
+          test -n "$VITE_API_BASE" || { echo "仓库变量 PATA_API_BASE 没设，见 deploy/README.md"; exit 1; }
+          echo "API base = $VITE_API_BASE"
+          npm run build
+
+      # 直接用 npx wrangler，不走 wrangler-action：出错时报文原样可见。
+      - name: deploy to Cloudflare
+        working-directory: pata
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx -y wrangler@4.104.0 deploy -c wrangler.jsonc
+
+      # 冒烟：站点真的 200、真的是 pata 的页面（骨架里的 #stage 是 Pixi 挂载点）。
+      # 首次部署时 custom_domain 的边缘证书要签发一会儿，所以给两分钟的重试窗口。
+      - name: smoke
+        run: |
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' \
+                   --retry 12 --retry-delay 10 --retry-all-errors \
+                   https://e.gamestao.com/)
+          echo "HTTP $code"
+          test "$code" = "200"
+          grep -q 'id="stage"' /tmp/body
+
+  api:
+    runs-on: ubuntu-latest
+    if: ${{ vars.API_DEPLOY_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # 服务端就一个零依赖单文件，所以"部署"= 把它喂给 VPS 上的 deploy-hook.sh。
+      # 那把 key 在 authorized_keys 里被 command= 钉死在这个脚本上，拿不到 root shell，
+      # 也就不能顺着这个仓库的 CI 去碰同一台机器上的游戏后端。脚本自己会做 node --check、
+      # 原子替换、重启容器；data.json 在宿主机目录里，不随部署走。
+      - name: ship server/index.mjs
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER }}
+          KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS }}
+        run: |
+          test -n "$VPS_HOST" && test -n "$KNOWN_HOSTS" || { echo "VPS_HOST / VPS_KNOWN_HOSTS 没设，见 deploy/README.md"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # 主机公钥写死在仓库变量里，不用 ssh-keyscan —— keyscan 是"问对方你是谁"，
+          # 中间人照样能答，等于没验。
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes \
+              "${VPS_USER:-pata}@$VPS_HOST" < pata/server/index.mjs
+
+      # 冒烟：未登录打 /api/save 必须是 401。200 说明鉴权没挂上，连不上则是别的问题。
+      - name: smoke
+        env:
+          API_BASE: ${{ vars.PATA_API_BASE }}
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --retry 6 --retry-delay 5 --retry-all-errors "$API_BASE/api/save")
+          echo "GET /api/save → HTTP $code"
+          test "$code" = "401"

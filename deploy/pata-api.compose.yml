@@ -1,0 +1,36 @@
+# pata 好友服务在 VPS 上的运行方式。这份文件放在 VPS 的 /root/pata/ 下，不由 CI 覆盖
+# （CI 只送 index.mjs）。改了这里要手工同步过去。
+#
+#   cd /root/pata && docker compose -f pata-api.compose.yml up -d
+#
+# 为什么不装 node 到宿主机：这台机器上的东西全在 docker 里，宿主机干净的状态值得保持。
+name: pata
+
+services:
+  api:
+    image: node:22-alpine
+    container_name: pata-api
+    restart: unless-stopped
+    init: true
+    working_dir: /app
+    # 启动前先清掉残留的单实例锁。index.mjs 的锁文件记的是 pid，容器里 node 永远是 pid 1，
+    # 上一次被 SIGKILL（OOM、docker kill）留下的锁写着 1，新进程探测 process.kill(1, 0)
+    # 会认为"持锁进程还活着"而拒绝启动 —— 服务从此起不来，直到有人手工删文件。
+    # container_name 保证这台机器上只会有一个实例，所以这里删锁是安全的。
+    command: sh -c "rm -f /app/data.json.lock && exec node index.mjs"
+    environment:
+      PORT: "5183"
+    # 代码和数据都在宿主机目录里：data.json 不随容器重建走，CI 换 index.mjs 也不用重建镜像。
+    volumes:
+      - /root/pata/server:/app
+    # 端口不往宿主机发布：只有同一网络里的 nw-caddy 需要它，公网入口走
+    # https://pata-api.gamestao.com（Caddy 反代 + Let's Encrypt 证书）。
+    networks:
+      - funny
+
+networks:
+  funny:
+    external: true
+    # 游戏后端那套 compose 建的网络（/root/funny/server/docker-compose.cloud.yml）。
+    # 加进来只是为了让 nw-caddy 能按名字解析到 pata-api，不共享任何别的东西。
+    name: server_default
