@@ -11,9 +11,10 @@ import { fmtDate, uid } from '../core/util';
 import type { AvatarState, DiaryEntry, MoodTag, RoomState } from '../model/types';
 import { bodyById } from '../data/avatar';
 import {
-  addFriend, fetchMe, helpFeed, isLoggedIn, listFriends, logout, pushSave, visit,
-  type FriendProfile, type InboxItem,
+  addFriend, helpFeed, isLoggedIn, listFriends, logout, pushSave, visit,
+  type FriendProfile,
 } from '../net/api';
+import { settleMail, type MailResult } from '../systems/mail';
 import { reopenGate } from './gate';
 import { SURFACE_ART_URLS } from '../render/surfaceArt';
 import { cell, clear, el, emojiThumb, sheet, tabs, toast } from './dom';
@@ -307,25 +308,17 @@ export function openFriends(onVisit: (t: VisitTarget) => void): void {
     }
 
     let friends: FriendProfile[];
-    let inbox: InboxItem[] = [];
+    let mail: MailResult = { messages: [], coins: 0 };
     try {
-      const me = await fetchMe();
-      inbox = me.inbox;
+      // 好友帮喂的饭、管理员发的金币，一次结算掉
+      mail = await settleMail();
       friends = await listFriends();
     } catch {
       clear(body).append(offline(() => void render()));
       return;
     }
 
-    // 结算别人帮喂的饭
-    if (inbox.length) {
-      const pet = S().pet;
-      pet.hunger = Math.min(100, pet.hunger + inbox.length * 8);
-      pet.mood = Math.min(100, pet.mood + inbox.length * 4);
-      S().coins += inbox.length * 15;
-      store.changed();
-      toast(`${inbox.map((i) => i.from).join('、')} 帮你喂了饭`);
-    }
+    for (const m of mail.messages) toast(m);
 
     clear(body);
 

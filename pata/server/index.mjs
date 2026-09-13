@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { makeAdmin } from './admin.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = join(HERE, 'data.json');
@@ -302,12 +303,15 @@ const routes = {
     json(res, 200, { ok: true });
   },
 
-  /** 自己的资料 + 待结算的好友帮忙 */
+  /** 自己的资料 + 待结算的好友帮忙 + 管理员发的金币 */
   'GET /api/me': async (_req, res, me) => {
     const inbox = me.inbox;
+    const grants = me.grants ?? [];
     me.inbox = [];
+    // 取走即销账。客户端拿到后立刻加进存档并落盘，和 inbox 一个待遇
+    me.grants = [];
     save();
-    json(res, 200, { ...publicProfile(me), code: me.code, inbox });
+    json(res, 200, { ...publicProfile(me), code: me.code, inbox, grants });
   },
 
   'GET /api/friends': async (_req, res, me) => {
@@ -353,7 +357,12 @@ const routes = {
   },
 };
 
-const PUBLIC = new Set(['POST /api/register', 'POST /api/login']);
+// 管理接口自带一套鉴权（口令换内存令牌），所以对下面这张玩家鉴权表来说
+// 它们全是「公开」的——千万别理解成不设防，admin.mjs 里每个 handler 都包了 guard()
+const admin = makeAdmin({ db, save, hashPassword, json, readBody, password: process.env.PATA_ADMIN_PASSWORD });
+Object.assign(routes, admin.routes);
+
+const PUBLIC = new Set(['POST /api/register', 'POST /api/login', ...Object.keys(admin.routes)]);
 const NEEDS_AUTH = new Set(Object.keys(routes).filter((k) => !PUBLIC.has(k)));
 
 http
@@ -365,6 +374,12 @@ http
     if (req.method === 'OPTIONS') return res.writeHead(204).end();
 
     const path = new URL(req.url, 'http://x').pathname;
+
+    // 后台页面是这个服务端唯一的静态资源，不走 JSON 路由表
+    if (req.method === 'GET' && (path === '/admin' || path === '/admin/')) {
+      return admin.servePage(res);
+    }
+
     const key = `${req.method} ${path}`;
     const handler = routes[key];
     if (!handler) return json(res, 404, { error: 'not found' });
@@ -386,4 +401,5 @@ http
     console.log(`pata 好友服务  http://localhost:${PORT}`);
     console.log(`数据文件      ${DB_PATH}`);
     console.log(`已注册用户    ${Object.keys(db.users).length}`);
+    admin.banner(PORT);
   });

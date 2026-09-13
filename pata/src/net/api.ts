@@ -21,6 +21,14 @@ export interface InboxItem {
   kind: string;
 }
 
+/** 管理后台发的金币。取走即销账，客户端拿到就得立刻记进存档 */
+export interface GrantItem {
+  id: string;
+  coins: number;
+  note: string;
+  at: number;
+}
+
 export class ApiError extends Error {}
 /** 令牌失效（别处登录过，或服务端重置了）。调用方应把用户送回登录页 */
 export class AuthError extends ApiError {}
@@ -131,7 +139,13 @@ export async function pushSave(): Promise<boolean> {
   }
 }
 
-export async function fetchMe(): Promise<{ code: string; inbox: InboxItem[] }> {
+/** 注意：这是个**取走即销账**的接口，inbox 和 grants 读一次就没了。
+ *  别直接调它，走 systems/mail 的 settleMail()，那里保证两样都结算到。 */
+export async function fetchMe(): Promise<{
+  code: string;
+  inbox: InboxItem[];
+  grants: GrantItem[];
+}> {
   return call('/api/me');
 }
 

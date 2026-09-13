@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pata 管理后台</title>
+<style>
+  :root {
+    --sky: #5cc8f2;
+    --sky-deep: #2f9fd0;
+    --cream: #fff7ec;
+    --ink: #3a3532;
+    --ink-soft: #8a807a;
+    --line: #e8ddcd;
+    --gold: #ffc44d;
+    --rose: #ff9aa6;
+    --mint: #8fd9b6;
+    --danger: #ff6b6b;
+    --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+      'Microsoft YaHei', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 64px;
+    font-family: var(--font); color: var(--ink);
+    background: var(--cream);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .sub { color: var(--ink-soft); font-size: 13px; margin-bottom: 22px; }
+
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: 16px;
+    padding: 18px; margin-bottom: 16px;
+    box-shadow: 0 4px 14px rgba(58, 53, 50, 0.07);
+  }
+  .card h2 { font-size: 14px; margin: 0 0 12px; letter-spacing: .02em; }
+
+  input, select {
+    font: inherit; font-size: 14px; color: var(--ink);
+    padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--cream); outline: none; min-width: 0;
+  }
+  input:focus, select:focus { border-color: var(--sky); background: #fff; }
+
+  button {
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    padding: 9px 16px; border-radius: 10px; border: 0;
+    background: var(--sky); color: #fff; transition: filter .15s, opacity .15s;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.06); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
+  button.gold { background: var(--gold); color: #6b4a06; }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid #ffd6d6; }
+  button.sm { padding: 5px 11px; font-size: 12px; }
+  button { white-space: nowrap; }
+
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1 1 160px; }
+
+  /* 列不少，窄窗口下宁可整张表横向滚动，也别把按钮挤成竖排 */
+  .scroller { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+  table { width: 100%; min-width: 660px; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    color: var(--ink-soft); text-transform: uppercase; white-space: nowrap;
+    padding: 0 10px 8px; border-bottom: 1px solid var(--line);
+  }
+  td {
+    padding: 11px 10px; border-bottom: 1px solid #f4ece0;
+    vertical-align: middle; white-space: nowrap;
+  }
+  td:last-child { width: 1%; }
+  tr:last-child td { border-bottom: 0; }
+  .name { font-weight: 600; }
+  .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--ink-soft); }
+  .coins { font-weight: 600; }
+  .pending { color: #a67c00; font-size: 11px; display: block; }
+  .dim { color: var(--ink-soft); }
+  .acts { display: flex; gap: 6px; justify-content: flex-end; }
+
+  .msg { padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 14px; display: none; }
+  .msg.ok { display: block; background: #e8f8f0; color: #2a7a56; }
+  .msg.bad { display: block; background: #ffeded; color: #c33; }
+
+  .login { max-width: 340px; margin: 12vh auto 0; }
+  .login .card { padding: 24px; }
+  .login input { width: 100%; margin-bottom: 12px; }
+  .login button { width: 100%; }
+  .hint { font-size: 12px; color: var(--ink-soft); line-height: 1.6; margin-top: 14px; }
+  code { background: var(--cream); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- 登录 -->
+<div class="wrap login" id="loginView">
+  <div class="card">
+    <h1>Pata 管理后台</h1>
+    <div class="sub">需要管理员口令</div>
+    <div class="msg" id="loginMsg"></div>
+    <input id="pw" type="password" placeholder="管理员口令" autocomplete="current-password" />
+    <button id="loginBtn">进入</button>
+    <div class="hint">
+      口令来自启动服务时的 <code>PATA_ADMIN_PASSWORD</code>；<br />
+      没设的话看 <code>npm run server</code> 的控制台输出，那里打了一个随机口令。
+    </div>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div class="wrap hide" id="mainView">
+  <div class="row" style="justify-content:space-between;align-items:flex-start">
+    <div>
+      <h1>Pata 管理后台</h1>
+      <div class="sub" id="summary">加载中…</div>
+    </div>
+    <button class="ghost sm" id="logoutBtn">退出</button>
+  </div>
+
+  <div class="msg" id="msg"></div>
+
+  <div class="card">
+    <h2>全服发金币</h2>
+    <div class="row">
+      <input id="allCoins" type="number" placeholder="金币数（可为负）" style="width:150px" />
+      <input id="allNote" class="grow" placeholder="附言，玩家会看到（选填）" maxlength="40" />
+      <button class="gold" id="allBtn">发给所有人</button>
+    </div>
+    <div class="hint">
+      金币存在玩家自己的存档里，所以这笔钱是挂在账上的——玩家下次上线同步时自动到账。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>账号<span class="dim" style="font-weight:400"> · 共 <span id="count">0</span> 个</span></h2>
+    <div class="scroller">
+    <table>
+      <thead>
+        <tr>
+          <th>名字</th><th>好友码</th><th>等级</th><th>金币</th><th>好友</th><th>最后同步</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let token = sessionStorage.getItem('pata.admin') || '';
+let users = [];
+
+// ── 请求 ──────────────────────────────────────────────
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && token) { signOut(); throw new Error('登录已失效，请重新输入口令'); }
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+function say(text, bad) {
+  const el = $('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (bad ? 'bad' : 'ok');
+  clearTimeout(say.t);
+  say.t = setTimeout(() => { el.className = 'msg'; }, 4000);
+}
+
+// ── 登录 ──────────────────────────────────────────────
+async function signIn() {
+  const pw = $('pw').value;
+  if (!pw) return;
+  $('loginBtn').disabled = true;
+  try {
+    const r = await api('/api/admin/login', { password: pw });
+    token = r.token;
+    sessionStorage.setItem('pata.admin', token);
+    $('pw').value = '';
+    show();
+  } catch (e) {
+    const m = $('loginMsg');
+    m.textContent = e.message;
+    m.className = 'msg bad';
+  } finally {
+    $('loginBtn').disabled = false;
+  }
+}
+
+function signOut() {
+  token = '';
+  sessionStorage.removeItem('pata.admin');
+  $('mainView').classList.add('hide');
+  $('loginView').classList.remove('hide');
+}
+
+async function show() {
+  $('loginView').classList.add('hide');
+  $('mainView').classList.remove('hide');
+  await load();
+}
+
+// ── 列表 ──────────────────────────────────────────────
+const when = (ts) => {
+  if (!ts) return '从未';
+  const d = (Date.now() - ts) / 1000;
+  if (d < 60) return '刚刚';
+  if (d < 3600) return Math.floor(d / 60) + ' 分钟前';
+  if (d < 86400) return Math.floor(d / 3600) + ' 小时前';
+  return Math.floor(d / 86400) + ' 天前';
+};
+
+async function load() {
+  try {
+    const r = await api('/api/admin/users');
+    users = r.users;
+    $('count').textContent = r.total;
+    const totalCoins = users.reduce((n, u) => n + (u.coins || 0), 0);
+    $('summary').textContent = r.total + ' 个账号 · 流通金币 ' + totalCoins.toLocaleString();
+    draw();
+  } catch (e) {
+    say(e.message, true);
+  }
+}
+
+function draw() {
+  const tb = $('rows');
+  tb.textContent = '';
+  if (!users.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'dim';
+    td.style.textAlign = 'center';
+    td.style.padding = '28px';
+    td.textContent = '还没有人注册';
+    tr.append(td); tb.append(tr);
+    return;
+  }
+
+  for (const u of users) {
+    const tr = document.createElement('tr');
+
+    const cell = (cls) => { const td = document.createElement('td'); if (cls) td.className = cls; tr.append(td); return td; };
+
+    cell('name').textContent = u.name;
+    cell('code').textContent = u.code;
+    cell('dim').textContent = 'Lv.' + u.level;
+
+    const coins = cell('coins');
+    coins.textContent = u.coins === null ? '—' : u.coins.toLocaleString();
+    if (u.pending) {
+      const p = document.createElement('span');
+      p.className = 'pending';
+      p.textContent = (u.pending > 0 ? '+' : '') + u.pending + ' 待领取';
+      p.title = '点击撤回';
+      p.style.cursor = 'pointer';
+      p.onclick = () => clearGrants(u);
+      coins.append(p);
+    }
+
+    cell('dim').textContent = u.friends;
+    cell('dim').textContent = when(u.saveAt);
+
+    const acts = cell();
+    const box = document.createElement('div');
+    box.className = 'acts';
+    box.append(
+      btn('发金币', 'gold sm', () => grant(u)),
+      btn('改密码', 'ghost sm', () => setPassword(u)),
+      btn('删除', 'danger sm', () => remove(u)),
+    );
+    acts.append(box);
+
+    tb.append(tr);
+  }
+}
+
+function btn(label, cls, onclick) {
+  const b = document.createElement('button');
+  b.className = cls;
+  b.textContent = label;
+  b.onclick = onclick;
+  return b;
+}
+
+// ── 操作 ──────────────────────────────────────────────
+async function grant(u) {
+  const raw = prompt('给「' + u.name + '」发多少金币？（负数是扣除）', '100');
+  if (raw === null) return;
+  const coins = parseInt(raw, 10);
+  if (!coins) return say('金币数要是个非零整数', true);
+  const note = prompt('附言，玩家会看到（可留空）', '') ?? '';
+  try {
+    await api('/api/admin/grant', { userId: u.userId, coins, note });
+    say('已给 ' + u.name + ' 挂上 ' + coins + ' 金币，玩家下次上线到账');
+    load();
+  } catch (e) { say(e.message, true); }
+}
+
+async function grantAll() {
+  const coins = parseInt($('allCoins').value, 10);
+  if (!coins) return say('先填一个非零的金币数', true);
+  if (!confirm('给全部 ' + users.length + ' 个账号各发 ' + coins + ' 金币？')) return;
+  try {
+    const r = await api('/api/admin/grant', { all: true, coins, note: $('allNote').value });
+    $('allCoins').value = '';
+    $('allNote').value = '';
+    say('已给 ' + r.count + ' 个账号各挂上 ' + coins + ' 金币');
+    load();
+  } catch (e) { say(e.message, true); }
+}
+
+async function clearGrants(u) {
+  if (!confirm('撤回「' + u.name + '」还没领取的 ' + u.pending + ' 金币？')) return;
+  try {
+    await api('/api/admin/grant/clear', { userId: u.userId });
+    say('已撤回');
+    load();
+  } catch (e) { say(e.message, true); }
+}
+
+async function setPassword(u) {
+  const pw = prompt('给「' + u.name + '」设一个新密码（至少 4 位）\n改完对方当前的登录会失效，需要用新密码重新登录。');
+  if (pw === null) return;
+  try {
+    await api('/api/admin/password', { userId: u.userId, password: pw });
+    say(u.name + ' 的密码已更改，对方需要重新登录');
+    load();
+  } catch (e) { say(e.message, true); }
+}
+
+async function remove(u) {
+  if (!confirm('删除账号「' + u.name + '」？\n存档、好友关系会一起消失，且无法恢复。')) return;
+  if (prompt('确认删除请输入该账号的名字：') !== u.name) return say('名字对不上，已取消');
+  try {
+    await api('/api/admin/delete', { userId: u.userId });
+    say('已删除 ' + u.name);
+    load();
+  } catch (e) { say(e.message, true); }
+}
+
+// ── 绑定 ──────────────────────────────────────────────
+$('loginBtn').onclick = signIn;
+$('pw').onkeydown = (e) => { if (e.key === 'Enter') signIn(); };
+$('logoutBtn').onclick = async () => { try { await api('/api/admin/logout', {}); } catch {} signOut(); };
+$('allBtn').onclick = grantAll;
+
+// sessionStorage 里还有令牌就直接进，省得每次刷新都输一遍
+if (token) show().catch(signOut); else $('pw').focus();
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@ import { FEELING_TEXT, MAX_LEVEL, advance, comfortOf, feelingOf, levelOf } from 
 import { caress, cooldownLeft, isAsleep, play, toggleSleep, trayItems, wash } from './systems/actions';
 import type { ActionResult } from './systems/actions';
 import { claimableCount } from './systems/quests';
+import { settleMail } from './systems/mail';
 import { pushSave, setAuthLostHandler } from './net/api';
 import { needsGate, openGate, reopenGate } from './ui/gate';
 import { S, store } from './model/store';
@@ -108,6 +109,15 @@ export class App {
     store.changed();
 
     this.pixi.ticker.add((t) => this.tick(t.deltaMS / 1000));
+
+    // 结算管理员发的金币和好友帮喂的饭。不 await：服务没开的时候
+    // 不该把游戏卡在启动这一步（登录页本来就允许离线进来）
+    // HUD 不用手动刷：settleMail() 里的 store.changed() 会走到 refresh()
+    void settleMail()
+      .then((mail) => mail.messages.forEach(toast))
+      .catch(() => {
+        /* 离线就下次再领，服务端那边还挂着 */
+      });
 
     if (!S().introDone) this.showIntro();
     else if (report.awayMs > 5 * 60_000) this.showOfflineReport(report.awayMs, report.coins);

@@ -6,6 +6,9 @@ import { fmtDate } from '../core/util';
 
 type Mode = 'login' | 'register';
 
+/** 本地未上传的进度超过这么久才值得打断用户去选。短于此一律以云端为准 */
+const UNPUSHED_PROMPT_MS = 10 * 60_000;
+
 /**
  * 登录闸门。游戏启动前先过这里。
  *
@@ -25,15 +28,24 @@ export function openGate(): Promise<void> {
     };
 
     const render = () => {
+      // 浏览器会把「文本框 + 密码框」认成登录表单去自动填充，而且填充是异步的。
+      // 靠 value 属性设初值会被它覆盖（曾经出现过：点下去那刻名字还是空的，
+      // 报「先取个名字」，之后才被填上旧账号名）。所以显式写 .value 属性，
+      // 并声明 autocomplete，让密码管理器按我们的意图工作而不是猜。
       const nameInput = el('input.input', {
         placeholder: '给 Pata 取个名字',
         maxlength: 16,
-        value: S().auth.name ?? '',
+        autocomplete: 'username',
+        name: 'pata-name',
       }) as HTMLInputElement;
+      nameInput.value = S().auth.name ?? '';
+
       const passInput = el('input.input', {
         type: 'password',
         placeholder: mode === 'register' ? '设一个密码（至少 4 位）' : '密码',
         maxlength: 32,
+        autocomplete: mode === 'register' ? 'new-password' : 'current-password',
+        name: 'pata-pass',
       }) as HTMLInputElement;
       const err = el('div.gate-err');
       const submit = el('button.btn.wide', {}, mode === 'register' ? '注册并开始' : '登录');
@@ -71,8 +83,11 @@ export function openGate(): Promise<void> {
           const remoteAt = await login(name, pass);
           const local = S();
           const localAt = local.leftAt ?? 0;
-          // 服务端的档更旧时不要静默覆盖——那可能是别处玩过之后又回到这台设备
-          if (remoteAt && remoteAt < localAt - 60_000) {
+          // 该比的不是「谁的时间戳新」——模拟器一直在跑，leftAt 每次落盘都往前走，
+          // 本地永远显得更新，挂一会儿页面就会误报冲突。
+          // 真正要问的是：本地在最后一次成功上传之后，又攒了多少没传上去的进度。
+          const unpushed = localAt - (local.auth.syncedAt ?? 0);
+          if (remoteAt && unpushed > UNPUSHED_PROMPT_MS) {
             confirmOverwrite(card, remoteAt, localAt, async (useRemote) => {
               if (useRemote) await pullRemote();
               done();
