@@ -11,7 +11,7 @@ import { fmtDate, uid } from '../core/util';
 import type { AvatarState, DiaryEntry, MoodTag, RoomState } from '../model/types';
 import { bodyById } from '../data/avatar';
 import {
-  addFriend, helpFeed, isLoggedIn, listFriends, logout, pushSave, visit,
+  ApiError, addFriend, helpFeed, isLoggedIn, listFriends, logout, pushSave, visit,
   type FriendProfile,
 } from '../net/api';
 import { settleMail, type MailResult } from '../systems/mail';
@@ -370,7 +370,8 @@ export function openFriends(onVisit: (t: VisitTarget) => void): void {
                 input.value = '';
                 void render();
               } catch (e) {
-                toast(e instanceof Error ? e.message : '添加失败');
+                // 只有 ApiError 带的是我们自己的中文文案，其它 Error 是英文的
+                toast(e instanceof ApiError ? e.message : '添加失败，请再试一次');
               }
             },
           }, '添加'),
@@ -401,7 +402,7 @@ export function openFriends(onVisit: (t: VisitTarget) => void): void {
                 store.changed();
                 toast(`帮 ${f.name} 喂了饭　+20 金币`);
               } catch (e) {
-                toast(e instanceof Error ? e.message : '操作失败');
+                toast(e instanceof ApiError ? e.message : '没喂成，请再试一次');
               }
             },
           }, '帮喂饭'),
@@ -418,7 +419,7 @@ export function openFriends(onVisit: (t: VisitTarget) => void): void {
                   name: data.name,
                 });
               } catch (e) {
-                toast(e instanceof Error ? e.message : '串门失败');
+                toast(e instanceof ApiError ? e.message : '串门失败，请再试一次');
               }
             },
           }, '串门'),

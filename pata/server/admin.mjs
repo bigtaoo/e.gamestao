@@ -11,12 +11,9 @@
  * 因为默认口令在原型里的真实下场就是永远没人改。
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const PAGE_PATH = join(HERE, 'admin.html');
+// 页面以字符串形式 import 进来，不读磁盘：线上只会有一个打包后的文件，
+// 旁边没有 admin.html 可读。改页面请改 admin.html 再跑 scripts/gen-admin-page.cjs
+import { ADMIN_HTML } from './admin-page.mjs';
 
 /** 令牌只活在内存里：重启即失效，不用考虑撤销和落盘 */
 const SESSION_MS = 8 * 60 * 60_000;
@@ -212,18 +209,11 @@ export function makeAdmin(ctx) {
 
   /** 后台页面。原型阶段直接由这个服务端出静态页，不进游戏的构建产物 */
   function servePage(res) {
-    let html;
-    try {
-      html = readFileSync(PAGE_PATH, 'utf8');
-    } catch {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end('admin.html 不见了');
-    }
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
     });
-    res.end(html);
+    res.end(ADMIN_HTML);
   }
 
   function banner(port) {

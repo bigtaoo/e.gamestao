@@ -196,18 +196,35 @@ function auth(req) {
   return Object.values(db.users).find((u) => u.token === token) ?? null;
 }
 
+/** 带 HTTP 状态码的错误，文案会原样发给客户端，所以必须是中文 */
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
+    let tooBig = false;
     req.on('data', (c) => {
+      // 超限后只是不再累积（剩下的字节收下就扔），不能 destroy 掉请求——
+      // 那会把响应通道一起掐断，客户端拿到的是连接被重置而不是 413。
+      // 真正要防的是内存无限增长，丢掉 data 就够了。
+      if (tooBig) return;
       data += c;
-      if (data.length > 512 * 1024) reject(new Error('payload too large'));
+      if (data.length > 512 * 1024) {
+        tooBig = true;
+        data = '';
+        reject(new HttpError(413, '请求内容太大了'));
+      }
     });
     req.on('end', () => {
       try {
         resolve(data ? JSON.parse(data) : {});
       } catch {
-        reject(new Error('bad json'));
+        reject(new HttpError(400, '请求格式不对'));
       }
     });
     req.on('error', reject);
@@ -382,7 +399,7 @@ http
 
     const key = `${req.method} ${path}`;
     const handler = routes[key];
-    if (!handler) return json(res, 404, { error: 'not found' });
+    if (!handler) return json(res, 404, { error: '没有这个接口' });
 
     let me = null;
     if (NEEDS_AUTH.has(key)) {
@@ -394,7 +411,10 @@ http
       await handler(req, res, me);
     } catch (e) {
       console.error('[pata]', key, e);
-      json(res, 500, { error: String(e.message || e) });
+      // HttpError 的文案是写给用户看的中文；其它异常是代码 bug，
+      // 它的 message 是英文的运行时报错，只进日志，不发给客户端
+      if (e instanceof HttpError) json(res, e.status, { error: e.message });
+      else json(res, 500, { error: '服务器出错了' });
     }
   })
   .listen(PORT, () => {

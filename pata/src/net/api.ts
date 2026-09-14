@@ -32,6 +32,15 @@ export interface GrantItem {
 export class ApiError extends Error {}
 /** 令牌失效（别处登录过，或服务端重置了）。调用方应把用户送回登录页 */
 export class AuthError extends ApiError {}
+/**
+ * 请求没能完成：断网、服务没起、跨域被挡、超时。
+ * 和「服务端返回了错误」是两回事——后者有中文文案，前者只有浏览器的英文原生消息
+ * （`Failed to fetch`），直接抛给界面就是一句用户看不懂的英文。
+ */
+export class NetworkError extends ApiError {}
+
+/** 超过这个时间还没响应就当连不上。没有它，半开连接会让界面永远卡在「连接中…」 */
+const TIMEOUT_MS = 10_000;
 
 /** 令牌失效时的回调，由 app 注册成「踢回登录页」 */
 let onAuthLost: (() => void) | null = null;
@@ -41,14 +50,27 @@ export const setAuthLostHandler = (fn: () => void) => {
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = S().auth.token;
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch (e) {
+    // 走到这里说明请求根本没拿到响应。浏览器给的消息是英文的
+    // （`Failed to fetch` / `signal timed out`），在这里就换成中文，
+    // 免得每个调用方各自去判断、漏一个就漏一句英文到界面上。
+    throw new NetworkError(
+      (e as Error | undefined)?.name === 'TimeoutError'
+        ? '服务器没有响应，请稍后再试'
+        : '连不上服务器，请检查网络，或确认好友服务已经启动',
+    );
+  }
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (res.status === 401 && token) {
     // 登录会轮换 token，所以这通常意味着这个号在别处登录了
@@ -57,7 +79,8 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     onAuthLost?.();
     throw new AuthError(String(body.error ?? '登录已失效'));
   }
-  if (!res.ok) throw new ApiError(String(body.error ?? `HTTP ${res.status}`));
+  // body.error 是服务端给的中文文案；没有就说明服务端没按约定回，别把状态码原样抛出去
+  if (!res.ok) throw new ApiError(String(body.error ?? `服务器出错了（${res.status}）`));
   return body as T;
 }
 

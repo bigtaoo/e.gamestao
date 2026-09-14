@@ -82,12 +82,44 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # 服务端就一个零依赖单文件，所以"部署"= 把它喂给 VPS 上的 ~/pata-ci-deploy.sh。
+      # 服务端源码是多个 .mjs（index + admin + admin-page），但下面那条管线只能发
+      # **一个文件**，所以先打包成单文件。
+      #
+      # 别想着"那就发多个文件"：VPS 上那把 key 被 command= 钉死在部署脚本上，
+      # 脚本只从 stdin 收一个文件，CI 没有 shell 去放第二个。
+      #
+      # 也别指望 VPS 上的 node --check 兜底——它只查语法，不解析 import。
+      # 2026-09-13 就是这么炸的：index.mjs import 了压根没发上去的 admin.mjs，
+      # 语法检查照过，容器起不来，线上 502。而 502 没有 CORS 头，
+      # 浏览器那头显示的是一句和真实原因毫无关系的 "Failed to fetch"。
+      - name: bundle server into one file
+        run: |
+          node pata/scripts/gen-admin-page.cjs
+          npx --yes esbuild@0.24 pata/server/index.mjs \
+            --bundle --platform=node --format=esm --target=node18 \
+            --outfile=/tmp/pata-server.mjs
+          # 关门验一次：把产物单独丢进空目录跑起来，旁边一个兄弟文件都没有。
+          # 这一步抓的正是"少发了一个文件"这类问题——在发出去之前抓，而不是之后。
+          mkdir -p /tmp/solo && cp /tmp/pata-server.mjs /tmp/solo/index.mjs
+          ( cd /tmp/solo && PORT=5199 node index.mjs > /tmp/solo.log 2>&1 & )
+          code=000
+          for _ in $(seq 1 20); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:5199/api/save" || true)
+            [ "$code" = "401" ] && break
+            sleep 0.5
+          done
+          echo "孤立运行：GET /api/save -> HTTP $code"
+          test "$code" = "401" || { echo '--- 产物起不来 ---'; cat /tmp/solo.log; exit 1; }
+          curl -sS -o /dev/null -w '孤立运行：GET /admin -> HTTP %{http_code}\n' \
+            "http://127.0.0.1:5199/admin"
+          pkill -f 'node index.mjs' || true
+
+      # "部署"= 把打包好的单文件喂给 VPS 上的 ~/pata-ci-deploy.sh。
       # 那把 key 在 authorized_keys 里被 command= 钉死在这个脚本上，拿不到 shell ——
       # 那台机器上还跑着公司的 wnet 栈、mssql 和德语 App 的同步后端，这个仓库的 CI
       # 不该有能力碰它们。脚本自己会做 node --check、原子替换、重启，最后**等服务真的
       # 答话**（401）才算成功；data.json 在宿主机目录里，不随部署走。
-      - name: ship server/index.mjs
+      - name: ship server bundle
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_HOST: ${{ vars.VPS_HOST }}
@@ -102,7 +134,7 @@ jobs:
           # 中间人照样能答，等于没验。
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes \
-              "${VPS_USER:-pata}@$VPS_HOST" < pata/server/index.mjs
+              "${VPS_USER:-pata}@$VPS_HOST" < /tmp/pata-server.mjs
 
       # 冒烟：未登录打 /api/save 必须是 401。200 说明鉴权没挂上，连不上则是别的问题。
       - name: smoke

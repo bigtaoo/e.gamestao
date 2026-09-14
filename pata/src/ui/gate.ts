@@ -1,5 +1,5 @@
 import { S, store } from '../model/store';
-import { fetchSave, isLoggedIn, login, register } from '../net/api';
+import { ApiError, fetchSave, isLoggedIn, login, register } from '../net/api';
 import { applyRemoteSave } from '../model/store';
 import { el, ui } from './dom';
 import { fmtDate } from '../core/util';
@@ -97,7 +97,9 @@ export function openGate(): Promise<void> {
           await pullRemote();
           done();
         } catch (e) {
-          fail(e instanceof Error ? e.message : '连不上服务器');
+          // 只有 ApiError 的文案是我们自己写的中文；其它 Error（代码 bug 抛的
+          // TypeError 之类）消息是英文的，不能直接显示给玩家
+          fail(e instanceof ApiError ? e.message : '出了点问题，请再试一次');
         }
       });
 

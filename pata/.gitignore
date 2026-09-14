@@ -11,3 +11,6 @@ src/assets/placeholder/*
 server/data.json
 server/data.json.tmp
 server/data.json.lock
+
+# 由 scripts/gen-admin-page.cjs 从 server/admin.html 生成，源文件才是唯一真相
+server/admin-page.mjs
